@@ -15,13 +15,17 @@ const DestinationInput = ({ onSelect }) => {
 
     const timeout = setTimeout(() => {
       fetch(
-        `/api/v1/geocode/autocomplete?text=${encodeURIComponent(
+        `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(
           query
         )}&limit=5&apiKey=${apiKey}`
       )
         .then((res) => res.json())
         .then((data) => {
           setSuggestions(data.features || []);
+        })
+        .catch((err) => {
+          console.error("Geoapify API error:", err);
+          setSuggestions([]);
         });
     }, 300);
 
