@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import DestinationInput from "./Destinationinput";
+import DestinationInput from "./DestinationInput";
 import {
   AI_Prompt,
   SelectBudgetOptions,
