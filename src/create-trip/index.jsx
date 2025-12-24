@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom"; // <-- import added
-import DestinationInput from "./DestinationInput";
+import React, { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import DestinationInput from "./Destinationinput";
 import {
   AI_Prompt,
   SelectBudgetOptions,
@@ -13,472 +13,347 @@ import { useGoogleLogin } from "@react-oauth/google";
 import axios from "axios";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "../service/firebaseConfig";
-import { retryAsync } from "../lib/retry"; // <<-- added retry import
+import { motion, AnimatePresence } from "framer-motion";
+import { Send, Bot, Loader2 } from "lucide-react";
 
 function CreateTrip() {
+  const [messages, setMessages] = useState([
+    {
+      id: 1,
+      sender: "ai",
+      text: "Hi there! I'm your AI Travel Agent. 🌍 Let's plan your dream trip. First, where do you want to go?",
+    },
+  ]);
+  const [currentStep, setCurrentStep] = useState(0); // 0: Location, 1: Days, 2: Budget, 3: Travelers, 4: Review
   const [formData, setFormData] = useState({});
-  const [generatedTrip, setGeneratedTrip] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [pendingGenerate, setPendingGenerate] = useState(false);
 
-  const navigate = useNavigate(); // <-- make sure react-router is set up in your app
+  const messagesEndRef = useRef(null);
+  const navigate = useNavigate();
 
-  // ---------------- small helper: try to recover JSON from AI raw output ----------------
-  function recoverAndParseJson(raw) {
-    if (!raw || typeof raw !== "string") {
-      throw new Error("Empty or non-string AI response");
+  // Scroll to bottom on new message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Read user from storage on mount
+  useEffect(() => {
+    const raw = localStorage.getItem("userInfo");
+    if (raw) {
+      setUser(JSON.parse(raw));
+    } else {
+      // If no user, ask for login immediately
+      setShowDialog(true);
     }
-    const s = raw.trim();
+  }, []);
 
-    // 1) direct parse
-    try {
-      return JSON.parse(s);
-    } catch (e) {
-      // continue
-    }
+  // ------------------ Step Logic ------------------
 
-    // 2) find first {...} or [...]
-    const braceMatch = s.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (braceMatch) {
-      try {
-        return JSON.parse(braceMatch[0]);
-      } catch (e) {
-        // continue
-      }
-    }
-
-    // 3) take substring between first { and last }
-    const first = s.indexOf("{");
-    const last = s.lastIndexOf("}");
-    if (first !== -1 && last !== -1 && last > first) {
-      const candidate = s.slice(first, last + 1);
-      try {
-        return JSON.parse(candidate);
-      } catch (e) {
-        // continue
-      }
-    }
-
-    // nothing worked
-    const preview = s.length > 1200 ? s.slice(0, 1200) + "..." : s;
-    const err = new Error("Unable to parse AI response as JSON");
-    err.raw = preview;
-    throw err;
-  }
-
-  // ---------------- Handle Input ----------------
-  const handleInputChange = (name, value) => {
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const addMessage = (text, sender = "user") => {
+    setMessages((prev) => [...prev, { id: Date.now(), sender, text }]);
   };
 
-  // ---------------- Generate Trip (with retry) ----------------
-  // ---------------- Generate Trip (robust + retry + stream handling) ----------------
-const OnGenarateTrip = async () => {
-  if (!user) {
-    setPendingGenerate(true);
-    setShowDialog(true);
-    return;
-  }
+  const handleNextStep = (key, value, label = null) => {
+    // 1. Save Data
+    setFormData((prev) => ({ ...prev, [key]: value }));
 
-  if (
-    !formData?.location ||
-    !formData?.travelers ||
-    !formData?.budget ||
-    !formData?.days
-  ) {
-    toast.error("Please fill all fields before generating your trip!");
-    return;
-  }
+    // 2. Add User Message (UI)
+    addMessage(label || value, "user");
 
-  if (Number(formData.days) > 6) {
-    toast.error("Trips longer than 6 days are not allowed right now!");
-    return;
-  }
+    // 3. Trigger AI Response & Next Step (Delayed for realism)
+    setCurrentStep((prev) => prev + 1);
+  };
 
-  setLoading(true);
-  setGeneratedTrip(null);
-  toast.success("🎉 Generating your trip... Please wait!");
+  // Effect to trigger AI question when step changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (currentStep === 1) {
+        addMessage(`Great choice! 🤩 How many days are you planning to stay?`, "ai");
+      } else if (currentStep === 2) {
+        addMessage("Got it. What's your budget for this trip? 💸", "ai");
+      } else if (currentStep === 3) {
+        addMessage("Who are you traveling with? 👨‍👩‍👧‍👦", "ai");
+      } else if (currentStep === 4) {
+        addMessage("Awesome! I have everything I need. Wishing you a fantastic trip! 🌟 Shall I generate your itinerary now? 🚀", "ai");
+      }
+    }, 600); // Natural delay
 
-  // helper: collect async iterator/stream into a string if needed
-  const collectStreamToString = async (maybeStream) => {
-    if (maybeStream == null) return maybeStream;
-    // already a string
-    if (typeof maybeStream === "string") return maybeStream;
-    // already an object (parsed)
-    if (typeof maybeStream === "object" && !(maybeStream[Symbol.asyncIterator])) return maybeStream;
-    // async iterator or stream-like
-    if (typeof maybeStream[Symbol.asyncIterator] === "function") {
-      let out = "";
+    return () => clearTimeout(timer);
+  }, [currentStep]);
+
+
+  // ------------------ Generators ------------------
+
+  const OnGenarateTrip = async () => {
+    if (!user) {
+      setPendingGenerate(true);
+      setShowDialog(true);
+      return;
+    }
+
+    // Check validation just in case
+    if (!formData.location || !formData.days || !formData.budget || !formData.travelers) {
+      toast.error("Missing information!");
+      return;
+    }
+
+    setLoading(true);
+    addMessage("Generating your personalized trip... please wait! ⏳", "ai");
+
+    try {
+      const Final_Prompt = AI_Prompt.replace("{location}", formData.location)
+        .replace("{days}", formData.days)
+        .replace("{travelers}", formData.travelers)
+        .replace("{budget}", formData.budget)
+        .replace("{location}", formData.location);
+
+      // using the chat service
+      // We'll collect the stream here manually if chat returns a stream, 
+      // or just use it if it returns string. 
+      // Note: The previous robust logic is good, but let's simplify for this UI rewrite 
+      // while maintaining the core functionality.
+
+      const result = await chat([], Final_Prompt);
+
+      let text = "";
+      if (typeof result === 'string') {
+        text = result;
+      } else if (result && typeof result[Symbol.asyncIterator] === 'function') {
+        for await (const chunk of result) text += chunk;
+      } else {
+        text = JSON.stringify(result);
+      }
+
+      // Parse JSON
+      let tripData = null;
       try {
-        for await (const chunk of maybeStream) {
-          // chunk may be string or object with text field
-          if (typeof chunk === "string") out += chunk;
-          else if (typeof chunk === "object" && chunk != null) {
-            // try common fields
-            if (typeof chunk.text === "string") out += chunk.text;
-            else if (typeof chunk.content === "string") out += chunk.content;
-            else out += JSON.stringify(chunk);
-          } else {
-            out += String(chunk);
+        // 1. Try direct parse
+        tripData = JSON.parse(text);
+      } catch {
+        // 2. Try match regex
+        const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+        if (match) tripData = JSON.parse(match[0]);
+      }
+
+      if (tripData) {
+        const docId = Date.now().toString();
+        await setDoc(doc(db, "trips", docId), {
+          userSelection: formData,
+          tripData: tripData,
+          userEmail: user?.email,
+          id: docId,
+          createdAt: new Date().toISOString()
+        });
+        navigate("/view-trip/" + docId);
+      } else {
+        console.error("Failed to parse", text);
+        toast.error("Failed to generate trip. Please try again.");
+        setLoading(false);
+      }
+
+    } catch (e) {
+      console.error(e);
+      toast.error("Something went wrong.");
+      setLoading(false);
+    }
+  };
+
+
+  // ------------------ Google Login ------------------
+  const login = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      try {
+        const res = await axios.get("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+        });
+
+        const profile = res.data;
+        localStorage.setItem("userInfo", JSON.stringify({ ...profile, token: tokenResponse.access_token }));
+
+        setUser(profile);
+        setShowDialog(false);
+        window.dispatchEvent(new Event("userChanged"));
+
+        // If we were waiting to generate
+        if (pendingGenerate) {
+          setPendingGenerate(false);
+          // We likely need to trigger generation if we are at step 4
+          if (currentStep === 4) {
+            setTimeout(() => OnGenarateTrip(), 500);
           }
         }
       } catch (err) {
-        console.warn("collectStreamToString: error while collecting stream", err);
+        console.error(err);
+        toast.error("Login failed");
       }
-      return out;
-    }
-    // unknown type, return as-is
-    return maybeStream;
-  };
-
-  try {
-    const Final_Prompt = AI_Prompt.replace("{location}", formData.location)
-      .replace("{days}", formData.days)
-      .replace("{travelers}", formData.travelers)
-      .replace("{budget}", formData.budget)
-      .replace("{location}", formData.location);
-
-    console.log("🧠 Final Prompt:", Final_Prompt);
-
-    // retry wrapper around the chat call
-    const rawResponse = await retryAsync(
-      async (attemptIndex) => {
-        console.log(`🌀 Generating trip (attempt ${attemptIndex + 1})...`);
-        // call your chat() function (may return string, object, or stream)
-        const res = await chat([], Final_Prompt);
-        return res;
-      },
-      {
-        retries: 3,
-        minDelay: 1500,
-        maxDelay: 7000,
-        factor: 2,
-        jitter: true,
-        shouldRetry: (err) => {
-          if (!err) return false;
-          const m = String(err?.message || "").toLowerCase();
-          return (
-            m.includes("503") ||
-            m.includes("unavailable") ||
-            m.includes("overloaded") ||
-            m.includes("rate limit") ||
-            m.includes("429") ||
-            m.includes("timeout")
-          );
-        },
-      }
-    );
-
-    // If we get here, rawResponse is whatever chat() returned (string/object/stream)
-    // Collect into a string if needed
-    const jsonResponseString = await collectStreamToString(rawResponse);
-
-    // Debug logging: type + preview
-    console.log("✅ Raw AI Response (full):", jsonResponseString);
-    const rawType = typeof jsonResponseString;
-    let rawPreview = "";
-    if (jsonResponseString == null) {
-      rawPreview = String(jsonResponseString);
-    } else if (rawType === "string") {
-      rawPreview =
-        jsonResponseString.length > 1200
-          ? jsonResponseString.slice(0, 1200) + "..."
-          : jsonResponseString;
-    } else {
-      try {
-        rawPreview = JSON.stringify(jsonResponseString).slice(0, 1200);
-      } catch {
-        rawPreview = String(jsonResponseString);
-      }
-    }
-    console.log("DEBUG: raw type:", rawType, "preview:", rawPreview);
-
-    // Robust parsing logic
-    let parsedData = null;
-
-    // 1) already parsed object
-    if (jsonResponseString && rawType === "object") {
-      parsedData = jsonResponseString;
-    }
-    // 2) non-empty string -> attempt robust parse
-    else if (rawType === "string" && jsonResponseString.trim().length > 0) {
-      try {
-        parsedData =
-          typeof jsonResponseString === "string"
-            ? recoverAndParseJson(jsonResponseString)
-            : jsonResponseString;
-      } catch (parseErr) {
-        console.error("⚠️ Failed to parse AI response (recoverAndParseJson):", parseErr);
-        if (parseErr.raw) console.error("----- RAW PREVIEW -----\n", parseErr.raw);
-        console.error("Full AI raw output:", jsonResponseString);
-        toast.error("AI returned invalid response. Check console for raw output.");
-        setLoading(false);
-        return;
-      }
-    } else {
-      // empty or unexpected
-      console.error(
-        "⚠️ AI returned empty or unexpected response. Type:",
-        rawType,
-        "Preview:",
-        rawPreview
-      );
-      toast.error("AI returned an empty response. Try again shortly.");
-      setLoading(false);
-      return;
-    }
-
-    // proceed with parsedData
-    console.log("🧩 Parsed AI Data:", parsedData);
-    setGeneratedTrip(parsedData);
-
-    // Save and navigate
-    try {
-      const docId = await SaveAiTrip(parsedData);
-      console.log("Saved AI trip to Firestore. id:", docId);
-
-      setLoading(false);
-      navigate("/view-trip/" + docId);
-      return;
-    } catch (saveErr) {
-      console.error("Failed to save AI trip:", saveErr);
-      toast.error("Failed to save trip to database (you can retry).");
-    }
-
-    toast.success("Trip generated successfully!");
-  } catch (error) {
-    console.error("❌ Error generating trip after retries:", error);
-    const msg = String(error?.message || "").toLowerCase();
-    if (msg.includes("503") || msg.includes("overloaded")) {
-      toast.error("⚠️ AI model is busy — please try again shortly.");
-    } else if (msg.includes("429") || msg.includes("rate limit")) {
-      toast.error("⏳ Rate limit reached — retry in a few seconds.");
-    } else {
-      toast.error("Failed to generate trip. Please try again later.");
-    }
-  } finally {
-    setLoading(false);
-  }
-};
-
-  // ---------------- Save Trip ----------------
-  // now returns docId string on success
-  const SaveAiTrip = async (tripData) => {
-    try {
-      const raw = localStorage.getItem("userInfo");
-      const userInfo = raw ? JSON.parse(raw) : null;
-      const docId = Date.now().toString();
-
-      await setDoc(doc(db, "trips", docId), {
-        userSelection: formData,
-        tripData: tripData,
-        userEmail: userInfo?.email || null,
-        id: docId,
-        createdAt: new Date().toISOString(),
-      });
-
-      return docId;
-    } catch (err) {
-      // rethrow so caller can handle toast/log
-      throw err;
-    }
-  };
-
-  // ---------------- Google Login ----------------
- const login = useGoogleLogin({
-  onSuccess: async (tokenResponse) => {
-    try {
-      const res = await axios.get("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-      });
-
-      const profile = res.data;
-
-      // ✅ Save login info in localStorage
-      localStorage.setItem(
-        "userInfo",
-        JSON.stringify({
-          ...profile,
-          token: tokenResponse.access_token,
-          expires_in: tokenResponse.expires_in,
-        })
-      );
-
-      // 🔔 Notify Header (and any other component) to update instantly
-      window.dispatchEvent(new Event("userChanged"));
-
-      setUser(profile);
-      toast.success(`Welcome, ${profile.name}!`);
-      setShowDialog(false);
-    } catch (err) {
-      console.error("Error fetching profile:", err);
-      toast.error("Failed to fetch user profile.");
-    }
-  },
-  onError: (error) => {
-    console.error("Login failed:", error);
-    toast.error("Login failed. Please try again.");
-  },
-});
+    },
+    onError: (e) => console.error(e),
+  });
 
 
-  // ---------------- Auto Generate After Login ----------------
-  useEffect(() => {
-    if (user && pendingGenerate) {
-      setPendingGenerate(false);
-      setTimeout(() => {
-        OnGenarateTrip();
-      }, 400);
-    }
-  }, [user]);
+  // ------------------ RENDER ------------------
 
-  // ---------------- UI ----------------
   return (
-    <div className="bg-gray-100 px-5 sm:px-10 md:px-20 lg:px-40 xl:px-56 py-10 relative">
-      {/* Header */}
-      <div>
-        <h2 className="text-xl sm:text-2xl font-medium text-gray-800 mb-2 tracking-wide">
-          Tell us your travel preferences 🏕️🛩️
-        </h2>
-        <p className="text-gray-700 text-sm sm:text-base max-w-2xl leading-relaxed">
-          Our AI Trip Planner personalizes trips based on your interests and
-          travel style. Get smart recommendations in seconds — no stress, just
-          adventure.
-        </p>
+    <div className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden bg-gray-900 text-white font-sans">
+
+      {/* Background Image */}
+      <div className="absolute inset-0 bg-cover bg-center opacity-40"
+        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=2073&auto=format&fit=crop')" }}>
       </div>
+      <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent" />
 
-      {/* Form Sections */}
-      <div className="mt-16 flex flex-col gap-8">
-        {/* Destination */}
-        <div>
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-2 tracking-wide">
-            What is your destination?
-          </h2>
-          <DestinationInput
-            onSelect={(place) =>
-              handleInputChange("location", place.properties.formatted)
-            }
-          />
-        </div>
+      {/* Main Chat Container */}
+      <div className="relative z-10 w-full max-w-2xl px-4 flex flex-col h-[80vh]">
 
-        {/* Days */}
-        <div>
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-2 tracking-wide">
-            How many days do you plan to travel?
-          </h2>
-          <input
-            placeholder="Enter number of days"
-            type="number"
-            onChange={(e) => handleInputChange("days", e.target.value)}
-            className="w-full max-w-3xl px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
-          />
-        </div>
-
-        {/* Budget */}
-        <div>
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-2 tracking-wide">
-            What is your Budget?
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 mt-5 gap-5">
-            {SelectBudgetOptions.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => handleInputChange("budget", item.title)}
-                className={`flex flex-col items-center p-5 border rounded-xl cursor-pointer transition-all duration-300 ${
-                  formData.budget === item.title
-                    ? "border-blue-500 bg-white shadow-lg scale-105"
-                    : "border-gray-200 bg-white hover:shadow-md hover:border-blue-400"
-                }`}
-              >
-                <div className="mb-3">{item.icon}</div>
-                <h2 className="font-semibold text-lg text-gray-800">
-                  {item.title}
-                </h2>
-                <p className="text-sm text-gray-500 text-center mt-1">
-                  {item.desc}
-                </p>
-              </div>
+        {/* Title (Floating) */}
+        <div className="text-center mb-6">
+          <h1 className="text-3xl font-bold tracking-tight text-white drop-shadow-lg">TripAI Assistant</h1>
+          <div className="flex justify-center gap-2 mt-2">
+            {[0, 1, 2, 3, 4].map(step => (
+              <div key={step} className={`h-2 w-2 rounded-full transition-all duration-300 ${step <= currentStep ? 'bg-blue-500 w-6' : 'bg-gray-600'}`} />
             ))}
           </div>
         </div>
 
-        {/* Travelers */}
-        <div>
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-2 tracking-wide">
-            Who do you plan to travel with?
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 mt-5 gap-5">
-            {SelectTravelersList.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => handleInputChange("travelers", item.title)}
-                className={`flex flex-col items-center p-5 border rounded-xl cursor-pointer transition-all duration-300 ${
-                  formData.travelers === item.title
-                    ? "border-blue-500 bg-white shadow-lg scale-105"
-                    : "border-gray-200 bg-white hover:shadow-md hover:border-blue-400"
-                }`}
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto space-y-4 px-2 no-scrollbar pb-32">
+          <AnimatePresence>
+            {messages.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div className="mb-3">{item.icon}</div>
-                <h2 className="font-semibold text-lg text-gray-800">
-                  {item.title}
-                </h2>
-                <p className="text-sm text-gray-500 text-center mt-1">
-                  {item.desc}
-                </p>
-              </div>
+                <div className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-lg backdrop-blur-md text-lg leading-relaxed
+                            ${msg.sender === 'user'
+                    ? 'bg-blue-600 text-white rounded-br-none'
+                    : 'bg-white/10 border border-white/20 text-gray-100 rounded-bl-none'
+                  }`}
+                >
+                  {msg.sender === "ai" && <Bot className="w-4 h-4 mb-1 text-blue-300 inline mr-2" />}
+                  {msg.text}
+                </div>
+              </motion.div>
             ))}
-          </div>
+            {loading && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
+                <div className="bg-white/10 rounded-2xl px-5 py-3 flex items-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                  <span className="text-sm text-gray-300">Thinking...</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Fixed Input Area (Bottom) */}
+        <div className="absolute bottom-0 left-0 w-full p-4 bg-gray-900/80 backdrop-blur-xl border-t border-white/10">
+
+          {/* Step 0: Location (Custom Component input) */}
+          {currentStep === 0 && (
+            <div className="relative">
+              <DestinationInput onSelect={(place) => handleNextStep("location", place.properties.formatted)} />
+              <p className="text-xs text-gray-400 mt-2 text-center">Type and select a destination from the list</p>
+            </div>
+          )}
+
+          {/* Step 1: Days (Number Input) */}
+          {currentStep === 1 && (
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Ex. 3 days"
+                max={6}
+                className="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.currentTarget.value) handleNextStep("days", e.currentTarget.value, `${e.currentTarget.value} Days`);
+                }}
+                id="daysInput"
+              />
+              <button
+                onClick={() => {
+                  const val = document.getElementById('daysInput').value;
+                  if (val) handleNextStep("days", val, `${val} Days`);
+                }}
+                className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-6 font-bold"
+              >
+                <Send size={20} />
+              </button>
+            </div>
+          )}
+
+          {/* Step 2: Budget (Options) */}
+          {currentStep === 2 && (
+            <div className="grid grid-cols-3 gap-2">
+              {SelectBudgetOptions.map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => handleNextStep("budget", opt.title, opt.title)}
+                  className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-3 flex flex-col items-center gap-1 transition-all"
+                >
+                  <span className="text-2xl">{opt.icon}</span>
+                  <span className="text-sm font-medium">{opt.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Step 3: Travelers (Options) */}
+          {currentStep === 3 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {SelectTravelersList.map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => handleNextStep("travelers", opt.title, opt.title)}
+                  className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-3 flex flex-col items-center gap-1 transition-all"
+                >
+                  <span className="text-2xl">{opt.icon}</span>
+                  <span className="text-sm font-medium">{opt.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Step 4: Generate (Final Button) */}
+          {currentStep === 4 && (
+            <button
+              onClick={OnGenarateTrip}
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-lg py-4 rounded-xl shadow-lg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Planning your Trip..." : "✨ Generate My Adventure"}
+            </button>
+          )}
+
         </div>
       </div>
 
-      {/* Generate Button */}
-      <div className="my-10 flex justify-end">
-        <button
-          onClick={OnGenarateTrip}
-          disabled={loading}
-          className={`px-6 py-3 text-white font-semibold rounded-xl shadow-md transition-all duration-300 ${
-            loading
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-indigo-600 hover:bg-indigo-700 hover:shadow-lg"
-          }`}
-        >
-          {loading ? "Generating..." : "Generate My Trip"}
-        </button>
-      </div>
-
-      {/* Login Dialog */}
+      {/* Google Login Dialog */}
       {showDialog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 transition-all duration-300">
-          <div className="bg-white rounded-2xl p-8 w-[90%] max-w-md shadow-2xl border border-gray-200 animate-fadeIn">
-            <h2 className="text-xl sm:text-2xl font-medium text-gray-800 mb-2 tracking-wide text-center">
-              Sign in to Continue
-            </h2>
-            <p className="text-gray-700 text-sm sm:text-base text-center mb-6">
-              You need to sign in before generating your AI-powered trip plan.
-            </p>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl relative">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Almost there! 🔓</h2>
+            <p className="text-gray-500 text-center mb-6">Sign in to save your trip and access it anywhere.</p>
             <button
               onClick={login}
-              className="flex items-center justify-center gap-3 w-full py-3 border border-gray-300 rounded-lg bg-white shadow-sm transition-all duration-300 transform hover:scale-[1.03] hover:shadow-md hover:border-indigo-400"
+              className="flex items-center justify-center gap-3 w-full py-4 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 transition-all shadow-sm"
             >
               <FcGoogle size={24} />
-              <span className="font-medium text-gray-700 hover:text-indigo-700 transition-colors duration-300">
-                Sign in with Google
-              </span>
+              <span className="font-semibold text-gray-700">Continue with Google</span>
             </button>
-            <button
-              onClick={() => {
-                setShowDialog(false);
-                setPendingGenerate(false);
-              }}
-              className="mt-6 w-full py-2 rounded-lg bg-indigo-600 text-white font-semibold shadow-md transition-all duration-300 transform hover:scale-[1.03] hover:bg-indigo-700 hover:shadow-lg"
-            >
-              Close
-            </button>
+            <button onClick={() => {
+              setShowDialog(false);
+              setPendingGenerate(false);
+            }} className="mt-4 w-full text-gray-400 text-sm hover:text-gray-600">Cancel</button>
           </div>
         </div>
       )}
+
     </div>
   );
 }

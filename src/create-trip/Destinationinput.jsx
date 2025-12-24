@@ -45,12 +45,12 @@ const DestinationInput = ({ onSelect }) => {
       />
 
       {suggestions.length > 0 && (
-        <ul className="absolute z-50 w-full max-w-3xl bg-white border border-gray-300 rounded-lg mt-1 shadow-lg max-h-60 overflow-y-auto text-sm">
+        <ul className="absolute bottom-full mb-2 z-50 w-full max-w-3xl bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto text-sm">
           {suggestions.map((place, idx) => (
             <li
               key={idx}
               onClick={() => handleSelect(place)}
-              className="px-4 py-2 hover:bg-blue-50 cursor-pointer transition"
+              className="px-4 py-2 hover:bg-blue-50 cursor-pointer transition text-gray-800"
             >
               {place.properties.formatted}
             </li>

@@ -1,13 +1,4 @@
-// ✅ Import Heroicons
-import {
-  UserIcon,
-  UserGroupIcon,
-  UsersIcon,
-  SparklesIcon,
-  CurrencyDollarIcon,
-  AdjustmentsHorizontalIcon,
-  StarIcon,
-} from "@heroicons/react/24/outline";
+import { MapPin, Users, Wallet, Sparkles, User, Briefcase } from "lucide-react";
 
 export const SelectTravelersList = [
   {
@@ -15,7 +6,7 @@ export const SelectTravelersList = [
     title: "Just Me",
     desc: "Traveling alone for self-discovery or adventure.",
     people: "1",
-    icon: <UserIcon className="w-10 h-10 text-indigo-500" />,
+    icon: <User className="w-10 h-10 text-indigo-500" />,
   },
   {
     id: 2,
@@ -23,7 +14,7 @@ export const SelectTravelersList = [
     value: "couple",
     desc: "Romantic getaway for two.",
     people: "2",
-    icon:<UsersIcon className="w-10 h-10 text-green-500" /> ,
+    icon: <Users className="w-10 h-10 text-pink-500" />,
   },
   {
     id: 3,
@@ -31,15 +22,15 @@ export const SelectTravelersList = [
     value: "family",
     desc: "Fun-filled trip with family members.",
     people: "4 to 6",
-    icon: <UserGroupIcon className="w-10 h-10 text-pink-500" />,
+    icon: <Users className="w-10 h-10 text-green-500" />,
   },
   {
     id: 4,
     title: "Friends",
     value: "friends",
-    desc: "A bunch of thrill-seekes.",
+    desc: "A bunch of thrill-seekers.",
     people: "5 to 10",
-    icon: <SparklesIcon className="w-10 h-10 text-yellow-500" />,
+    icon: <Sparkles className="w-10 h-10 text-yellow-500" />,
   },
 ];
 
@@ -48,19 +39,19 @@ export const SelectBudgetOptions = [
     id: 1,
     title: "Low",
     desc: "Budget-friendly travel with essentials.",
-    icon: <CurrencyDollarIcon className="w-10 h-10 text-green-500" />,
+    icon: <Wallet className="w-10 h-10 text-gray-500" />,
   },
   {
     id: 2,
     title: "Medium",
     desc: "Balanced comfort and affordability.",
-    icon: <AdjustmentsHorizontalIcon className="w-10 h-10 text-blue-500" />,
+    icon: <Wallet className="w-10 h-10 text-blue-500" />,
   },
   {
     id: 3,
     title: "Luxury",
     desc: "Premium experiences and high-end stays.",
-    icon: <StarIcon className="w-10 h-10 text-yellow-500" />,
+    icon: <Briefcase className="w-10 h-10 text-purple-500" />,
   },
 ];
 
@@ -78,4 +69,4 @@ export const SelectBudgetOptions = [
   ))}
 </div>
 
-export const AI_Prompt="Genarate travel plan for location : {location}, for {days} days for {travelers} with {budget} budget , give me hotel options and hotel names with address and pricing and rating and hotel image url ,description and suggest itineary with details , place image url ,ticket pricing , time to travel each for location with each day plan with best time to visit the place {location} in JSON format"
+export const AI_Prompt = "Generate travel plan for location: {location}, for {days} days for {travelers} with {budget} budget. Include best_time_to_visit, hotel options (name, address, pricing_per_night_approx with min and max, rating, image_url, description) and a detailed daily itinerary. The itinerary MUST be a nested structure: an array of day objects (day, title), where each day object contains a 'plan' array of objects (activity, description, image_url, ticket_pricing_approx, travel_time, and time_of_day). Return the data in a nested JSON structure with a 'best_time_to_visit' field and a 'travel_plan' object containing 'hotel_options' and 'itinerary' arrays."
