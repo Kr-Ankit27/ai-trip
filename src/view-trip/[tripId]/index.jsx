@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../service/firebaseConfig";
-import InfoSec from "../components/infoSec";
+import InfoSec from "../components/InfoSec";
 import Hotel from "../components/Hotel";
 import Placestovisit from "../components/Placestovisit";
 import Footer from "../components/Footer";

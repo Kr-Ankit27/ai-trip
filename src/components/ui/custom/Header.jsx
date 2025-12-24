@@ -84,12 +84,10 @@ export default function Header() {
         className="flex items-center gap-3 cursor-pointer select-none"
         onClick={() => navigate("/")}
       >
-        <div className={`w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center ${isHome ? 'bg-white/10 backdrop-blur-md border border-white/20' : 'bg-indigo-50/50 border border-indigo-100'}`}>
-          <img
-            src="/src/assets/logo.png"
-            alt="TripAi Logo"
-            className="w-10 h-10 object-contain drop-shadow-xl"
-          />
+        <div className={`p-2 rounded-full ${isHome ? 'bg-white/20 backdrop-blur-sm' : 'bg-indigo-50'}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isHome ? "text-white" : "text-indigo-600"}>
+            <path d="M2 12h20" /><path d="M20 12v1a9 9 0 0 1-18 0v-1" /><path d="M13 2 9 22" /><path d="M20 22 4 2" />
+          </svg>
         </div>
 
         <span className={`text-xl md:text-2xl font-bold tracking-tight ${isHome ? 'text-white' : 'text-transparent bg-clip-text bg-gradient-to-r from-purple-700 via-indigo-600 to-sky-500'}`}>
