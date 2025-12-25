@@ -27,15 +27,35 @@ export default function TravelAssistant({ trip }) {
         const hotels = tripData?.hotel_options || [];
         const location = trip?.userSelection?.location || "this destination";
 
-        let context = `Context: User is on a trip to ${location}.
-Hotels: ${hotels.map(h => h.name).join(', ')}.
-Itinerary Highlights:
-`;
+        let context = `You are a friendly Travel Assistant helping a user with their trip to ${location}.
+
+CRITICAL INSTRUCTIONS:
+- NEVER return raw JSON or code in your responses
+- Always respond in natural, conversational language
+- Use emojis to make responses engaging
+- Keep responses concise (2-4 sentences max)
+- Format information in a readable, friendly way
+
+Trip Information Available:
+Location: ${location}
+Hotels: ${hotels.map(h => h.name).join(', ') || 'Not specified'}
+
+Itinerary Overview:`;
+
         itinerary.forEach(day => {
-            context += `Day ${day.day}: ${day.plan.map(p => p.activity).join(', ')}\n`;
+            const dayNum = day.dayNumber || day.day || 'N/A';
+            const activities = day.plan?.map(p => p.activity || p.title).filter(Boolean) || [];
+            if (activities.length > 0) {
+                context += `\nDay ${dayNum}: ${activities.join(', ')}`;
+            }
         });
 
-        context += `\nYou are a helpful travel assistant. Keep responses brief, friendly, and trip-focused. Use emojis.`;
+        context += `\n\nWhen answering questions:
+- Provide helpful, conversational responses
+- Reference specific details from the trip when relevant
+- Suggest tips and recommendations
+- NEVER output JSON, code blocks, or raw data structures`;
+
         return context;
     };
 
@@ -58,7 +78,24 @@ Itinerary Highlights:
                 ...newMessages
             ];
 
-            const response = await chat(historyWithContext, "Respond to the user's last message based on the context provided earlier.");
+            let response = await chat(historyWithContext, "Answer the user's question in a friendly, conversational way. Do NOT return JSON or code. Provide a helpful text response with emojis.");
+
+            // Validate response - if it looks like JSON, ask AI to reformulate
+            if (response.trim().startsWith('{') || response.trim().startsWith('[')) {
+                console.warn('⚠️ AI returned JSON, requesting conversational response...');
+                response = await chat(
+                    [...historyWithContext,
+                    { role: 'model', parts: [{ text: response }] },
+                    { role: 'user', parts: [{ text: 'Please provide that information in a friendly conversational format, not as JSON or code. Use natural language and emojis.' }] }
+                    ],
+                    "Convert your previous response to natural, friendly conversation."
+                );
+            }
+
+            // Final safety check - if still JSON, provide fallback
+            if (response.trim().startsWith('{') || response.trim().startsWith('[')) {
+                response = "I have all the details about your trip! 🗺️ Could you ask me a specific question? For example, you could ask about activities, hotels, or recommendations for a particular day.";
+            }
 
             setMessages(prev => [...prev, {
                 role: 'model',
@@ -120,8 +157,8 @@ Itinerary Highlights:
                                             {msg.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Compass className="w-4 h-4 text-blue-400" />}
                                         </div>
                                         <div className={`p-4 rounded-3xl text-sm leading-relaxed ${msg.role === 'user'
-                                                ? 'bg-indigo-600 text-white rounded-tr-none shadow-lg shadow-indigo-600/10'
-                                                : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-none'
+                                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-lg shadow-indigo-600/10'
+                                            : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-none'
                                             }`}>
                                             {msg.parts[0].text}
                                         </div>
@@ -176,8 +213,8 @@ Itinerary Highlights:
                 whileTap={{ scale: 0.9 }}
                 onClick={() => setIsOpen(!isOpen)}
                 className={`w-16 h-16 rounded-[2rem] flex items-center justify-center shadow-2xl transition-all duration-300 ${isOpen
-                        ? 'bg-slate-800 text-white border border-white/10'
-                        : 'bg-blue-600 text-white shadow-blue-600/30'
+                    ? 'bg-slate-800 text-white border border-white/10'
+                    : 'bg-blue-600 text-white shadow-blue-600/30'
                     }`}
             >
                 {isOpen ? <X className="w-8 h-8" /> : <MessageCircle className="w-8 h-8" />}
