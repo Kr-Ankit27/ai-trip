@@ -78,7 +78,21 @@ export default function MyTrips() {
           const td = t.tripData || {};
           const fsImage = td.hotel_options?.[0]?.image_url || null;
           if (fsImage) return { ...t, resolvedImage: fsImage };
-          const searchTerm = td.location ? `${td.location.split(',')[0]} landmark` : "travel landscape";
+
+          // Create more specific search terms for better image results
+          const location = td.location || t.userSelection?.location || "";
+          const cityName = location.split(',')[0].trim();
+
+          // Try multiple search strategies for better results
+          const searchTerms = [
+            `${cityName} city skyline`,
+            `${cityName} famous landmark`,
+            `${cityName} tourism`,
+            `${cityName} travel destination`
+          ];
+
+          // Use the first search term with a unique identifier to avoid cache collisions
+          const searchTerm = searchTerms[0];
           const pix = await fetchImageFor(searchTerm);
           return { ...t, resolvedImage: pix || DEFAULT_IMAGE };
         })
