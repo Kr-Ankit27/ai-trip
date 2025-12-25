@@ -35,7 +35,7 @@ const Hero = () => {
         </p>
 
         {/* --- Minimalist CTA Button --- */}
-        <Link to="/create-trip">
+        <Link to="/get-started">
           <button className="group relative px-8 py-4 bg-white/10 backdrop-blur-md border border-white/30 rounded-full text-white font-semibold text-lg overflow-hidden transition-all duration-300 hover:bg-white/20 hover:scale-105 hover:shadow-2xl flex items-center gap-3">
             <span className="relative z-10 tracking-wide">Get Started</span>
             <div className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center group-hover:bg-white transition-colors">

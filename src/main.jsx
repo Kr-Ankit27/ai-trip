@@ -10,6 +10,8 @@ import { Toaster } from "react-hot-toast";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import Viewtrip from "./view-trip/[tripId]/index.jsx";
 import MyTrips from "./my-trips/index.jsx";
+import DestinationFinder from "./destination-finder/index.jsx";
+import TripSelection from "./components/ui/custom/TripSelection.jsx";
 
 const router = createBrowserRouter([
   {
@@ -18,6 +20,15 @@ const router = createBrowserRouter([
       <>
         <Header />
         <App />
+      </>
+    ),
+  },
+  {
+    path: "/get-started",
+    element: (
+      <>
+        <Header />
+        <TripSelection />
       </>
     ),
   },
@@ -45,6 +56,15 @@ const router = createBrowserRouter([
       <>
         <Header />
         <MyTrips />
+      </>
+    ),
+  },
+  {
+    path: "/destination-finder",
+    element: (
+      <>
+        <Header />
+        <DestinationFinder />
       </>
     ),
   }

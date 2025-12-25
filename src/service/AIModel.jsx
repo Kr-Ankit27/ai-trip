@@ -9,11 +9,8 @@ const API_KEYS = [
 // The "Ultra-Failover" model priority list
 const MODEL_PRIORITY = [
   'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-3-flash',
   'gemini-1.5-flash',
   'gemini-1.5-pro',
-  'gemini-1.5-flash-latest'
 ];
 
 /**
@@ -72,7 +69,7 @@ async function executeWithUltraFailover(operationFn) {
         console.log(`🤖 Trial: Key #${keyIdx + 1}, Model: ${modelName}...`);
         const rawResponse = await operationFn(ai, modelName);
         console.log("✅ AI Success!");
-        return extractJSON(rawResponse);
+        return rawResponse;
       } catch (error) {
         const msg = error.message?.toLowerCase() || '';
 
@@ -182,6 +179,61 @@ export async function chat(history, userMessage) {
       else if (typeof chunk.text === 'string') fullText += chunk.text;
       else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) fullText += chunk.candidates[0].content.parts[0].text;
     }
-    return fullText;
+    return extractJSON(fullText);
   });
 }
+
+/**
+ * NEW: Suggest destinations based on user preferences
+ */
+export async function suggestDestinations(preferences) {
+  const prompt = `You are a travel expert. Based on these user preferences, suggest exactly 5 diverse destinations from different continents:
+
+Climate Preference: ${preferences.climate}
+Travel Vibe: ${preferences.vibe}
+Budget Style: ${preferences.budget}
+Travel Pace: ${preferences.pace}
+Crowd Preference: ${preferences.crowd}
+
+Return ONLY a valid JSON array with this EXACT structure (no additional text):
+[
+  {
+    "destination": "City, Country",
+    "matchScore": 95,
+    "reason": "Brief explanation why this destination perfectly matches their preferences (2-3 sentences)",
+    "bestMonths": "Month-Month (e.g., Dec-Feb)",
+    "highlightActivity": "One iconic activity or attraction"
+  }
+]
+
+CRITICAL RULES:
+- Return EXACTLY 5 destinations
+- Ensure destinations are diverse (different continents/regions)
+- Match scores should be between 85-99
+- Keep reasons concise but compelling
+- Use real, popular destinations
+- NO markdown, NO code blocks, ONLY the JSON array`;
+
+  return executeWithUltraFailover(async (ai, modelName) => {
+    const result = await ai.models.generateContentStream({
+      model: modelName,
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+      systemInstruction: "You are a travel expert. Return ONLY valid JSON arrays. No markdown, no explanations.",
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+
+    const stream = result.stream || result;
+    let fullText = '';
+    for await (const chunk of stream) {
+      if (typeof chunk.text === 'function') fullText += chunk.text();
+      else if (typeof chunk.text === 'string') fullText += chunk.text;
+      else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) fullText += chunk.candidates[0].content.parts[0].text;
+    }
+
+    const cleanedJSON = extractJSON(fullText);
+    return JSON.parse(cleanedJSON);
+  });
+}
+
