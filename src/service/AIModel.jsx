@@ -4,7 +4,8 @@ const API_KEYS = [
   import.meta.env.VITE_GOOGLE_GEMINI_AI_API_KEY,
   import.meta.env.VITE_GOOGLE_GEMINI_AI_API_KEY_2,
   import.meta.env.VITE_GOOGLE_GEMINI_AI_API_KEY_3,
-  import.meta.env.VITE_GOOGLE_GEMINI_AI_API_KEY_4
+  import.meta.env.VITE_GOOGLE_GEMINI_AI_API_KEY_4,
+  import.meta.env.VITE_GOOGLE_GEMINI_AI_API_KEY_5
 ].filter(Boolean);
 
 // The "Ultra-Failover" model priority list
