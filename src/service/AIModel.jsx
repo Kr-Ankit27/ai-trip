@@ -9,8 +9,6 @@ const API_KEYS = [
 // The "Ultra-Failover" model priority list
 const MODEL_PRIORITY = [
   'gemini-2.5-flash',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
 ];
 
 /**
